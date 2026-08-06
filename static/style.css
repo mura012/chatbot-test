@@ -200,6 +200,33 @@ body {
   color: var(--text);
 }
 
+.sources {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 100%;
+}
+
+.sources-title {
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 0.35rem;
+}
+
+.source-item {
+  margin-top: 0.35rem;
+  line-height: 1.4;
+}
+
+.source-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
 @media (max-width: 480px) {
   .app {
     padding: 0.75rem;

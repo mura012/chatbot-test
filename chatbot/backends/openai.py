@@ -6,6 +6,7 @@ from openai import OpenAI
 
 from chatbot.backends.base import ReplyBackend
 from chatbot.models import Conversation
+from chatbot.reply import ReplyResult
 
 
 class OpenAIReplyBackend(ReplyBackend):
@@ -16,7 +17,7 @@ class OpenAIReplyBackend(ReplyBackend):
         self._model = model
         self._system_prompt = system_prompt
 
-    def generate_reply(self, conversation: Conversation, user_message: str) -> str:
+    def generate_reply(self, conversation: Conversation, user_message: str) -> ReplyResult:
         # conversation には user_message がまだ追加されていない想定。
         # api_messages は system + 既存履歴のみを含め、最新ユーザー入力は別途渡す。
         messages = conversation.api_messages(system_prompt=self._system_prompt)
@@ -30,4 +31,4 @@ class OpenAIReplyBackend(ReplyBackend):
         content = response.choices[0].message.content
         if content is None:
             raise RuntimeError("OpenAI API が空の応答を返しました。")
-        return content
+        return ReplyResult(text=content)

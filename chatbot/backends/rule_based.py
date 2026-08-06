@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from chatbot.backends.base import ReplyBackend
 from chatbot.models import Conversation
+from chatbot.reply import ReplyResult
 
 RULES: list[tuple[list[str], str]] = [
     (["こんにちは", "こんにちわ", "hello", "hi"], "こんにちは！今日はどんなご用件ですか？"),
@@ -21,12 +22,12 @@ DEFAULT_REPLY = "なるほど、「{message}」ですね。（ルールベース
 class RuleBasedReplyBackend(ReplyBackend):
     """前回のサンプルと同じ、キーワードに応じた固定応答を返すバックエンド。"""
 
-    def generate_reply(self, conversation: Conversation, user_message: str) -> str:
+    def generate_reply(self, conversation: Conversation, user_message: str) -> ReplyResult:
         normalized = user_message.lower()
 
         for keywords, reply in RULES:
             for keyword in keywords:
                 if keyword.lower() in normalized:
-                    return reply
+                    return ReplyResult(text=reply)
 
-        return DEFAULT_REPLY.format(message=user_message)
+        return ReplyResult(text=DEFAULT_REPLY.format(message=user_message))

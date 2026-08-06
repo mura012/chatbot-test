@@ -16,37 +16,47 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "ok")
-        self.assertIn(data["backend"], ("rule", "openai"))
+        self.assertTrue(data["rag_enabled"])
+        self.assertIn(data["backend"], ("rule_rag", "openai_rag", "rule", "openai"))
 
-    def test_chat_rule_based(self) -> None:
+    def test_chat_rag_rule_based(self) -> None:
         response = self.client.post(
             "/api/chat",
-            json={"message": "こんにちは"},
+            json={"message": "初代王アルドリックについて教えて"},
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIn("こんにちは", data["reply"])
+        self.assertIn("アルドリック", data["reply"])
         self.assertTrue(data["session_id"])
-        self.assertEqual(len(data["messages"]), 2)
+        self.assertGreater(len(data["sources"]), 0)
 
     def test_chat_continues_session(self) -> None:
-        first = self.client.post("/api/chat", json={"message": "こんにちは"}).json()
+        first = self.client.post(
+            "/api/chat",
+            json={"message": "アルセンは誰と出会った"},
+        ).json()
         second = self.client.post(
             "/api/chat",
-            json={"message": "ありがとう", "session_id": first["session_id"]},
+            json={"message": "エリナの職業は？", "session_id": first["session_id"]},
         )
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.json()["session_id"], first["session_id"])
         self.assertEqual(len(second.json()["messages"]), 4)
 
     def test_get_history(self) -> None:
-        chat = self.client.post("/api/chat", json={"message": "hello"}).json()
+        chat = self.client.post(
+            "/api/chat",
+            json={"message": "霧晶魔法の系統"},
+        ).json()
         response = self.client.get(f"/api/history/{chat['session_id']}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()), 2)
 
     def test_delete_session(self) -> None:
-        chat = self.client.post("/api/chat", json={"message": "hello"}).json()
+        chat = self.client.post(
+            "/api/chat",
+            json={"message": "霧晶の王国"},
+        ).json()
         response = self.client.delete(f"/api/session/{chat['session_id']}")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["deleted"])

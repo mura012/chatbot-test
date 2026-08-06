@@ -2,14 +2,17 @@
 コンソール（CLI）版チャットボット。
 
 Web版（app.py）と同じ ChatService を使うので、
-応答ロジック・会話履歴の扱いは Web と CLI で共通です。
+応答ロジック・会話履歴・RAG の扱いは Web と CLI で共通です。
 
 使い方:
     python chatbot.py
 
 環境変数でバックエンドを切り替え可能:
-    CHATBOT_BACKEND=rule   → キーワードルール（APIキー不要）
-    CHATBOT_BACKEND=openai → OpenAI API（OPENAI_API_KEY 必須）
+    CHATBOT_BACKEND=rule        → キーワードルール（RAG なし）
+    CHATBOT_BACKEND=openai      → OpenAI API（RAG なし）
+    CHATBOT_BACKEND=rule_rag    → sample/ を検索して固定表示（API 不要）
+    CHATBOT_BACKEND=openai_rag  → sample/ を検索 + OpenAI で回答（推奨）
+    CHATBOT_BACKEND=rag         → API キーの有無で openai_rag / rule_rag を自動選択
 """
 
 from __future__ import annotations
@@ -29,14 +32,20 @@ def run_chat_loop() -> None:
     service = ChatService.create(settings)
     session_id: str | None = None
 
-    backend_label = (
-        f"OpenAI ({settings.openai_model})"
-        if settings.backend == "openai"
-        else "ルールベース"
-    )
+    backend_labels = {
+        "openai": f"OpenAI ({settings.openai_model})",
+        "rule": "ルールベース",
+        "openai_rag": f"RAG + OpenAI ({settings.openai_model})",
+        "rule_rag": f"RAG + キーワード検索",
+    }
+    backend_label = backend_labels.get(settings.backend, settings.backend)
 
     print("=== チャットボット（CLI） ===")
     print(f"バックエンド: {backend_label}")
+    if settings.is_rag_backend:
+        kb = service.knowledge_base
+        if kb:
+            print(f"知識ベース: {kb.directory}（{kb.document_count} ファイル / {kb.chunk_count} チャンク）")
     print(f"終了するには {', '.join(sorted(EXIT_WORDS))} のいずれかを入力してください。")
     print()
 
@@ -55,8 +64,13 @@ def run_chat_loop() -> None:
             break
 
         try:
-            reply, session_id, _ = service.chat(user_message, session_id=session_id)
+            reply, session_id, _, sources = service.chat(user_message, session_id=session_id)
             print(f"ボット: {reply}")
+            if sources:
+                print("  [参照資料]")
+                for src in sources:
+                    preview = src.snippet[:80] + ("…" if len(src.snippet) > 80 else "")
+                    print(f"    - {src.source} (score={src.score}): {preview}")
         except Exception as exc:
             print(f"ボット: エラーが発生しました — {exc}")
 
