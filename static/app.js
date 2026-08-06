@@ -1,11 +1,5 @@
 /**
  * チャットボット Web UI のフロントエンドロジック。
- *
- * やっていること:
- * 1. ユーザーがフォームに入力して送信
- * 2. POST /api/chat にメッセージと session_id を送る
- * 3. 返ってきた reply を画面に表示
- * 4. session_id を保持して、次のメッセージでも同じ会話を続ける
  */
 
 const chatContainer = document.getElementById("chat-container");
@@ -18,7 +12,7 @@ const statusBadge = document.getElementById("status-badge");
 let sessionId = null;
 let isSending = false;
 
-function addMessage(role, content, extraClass = "") {
+function addMessage(role, content, extraClass = "", sources = []) {
   const wrapper = document.createElement("div");
   wrapper.className = `message ${role}${extraClass ? ` ${extraClass}` : ""}`;
 
@@ -27,6 +21,22 @@ function addMessage(role, content, extraClass = "") {
   bubble.textContent = content;
 
   wrapper.appendChild(bubble);
+
+  if (sources.length > 0) {
+    const sourcesEl = document.createElement("div");
+    sourcesEl.className = "sources";
+    sourcesEl.innerHTML = "<div class=\"sources-title\">参照した資料</div>";
+
+    sources.forEach((src) => {
+      const item = document.createElement("div");
+      item.className = "source-item";
+      item.innerHTML = `<span class="source-name">${src.source}</span>（スコア: ${src.score}）<br>${src.snippet}`;
+      sourcesEl.appendChild(item);
+    });
+
+    wrapper.appendChild(sourcesEl);
+  }
+
   chatContainer.appendChild(wrapper);
   chatContainer.scrollTop = chatContainer.scrollHeight;
 
@@ -39,15 +49,25 @@ function removeMessage(element) {
   }
 }
 
+function formatBackendLabel(data) {
+  if (data.backend === "openai_rag") {
+    return `RAG + OpenAI (${data.model})`;
+  }
+  if (data.backend === "rule_rag") {
+    return `RAG + ルール (${data.rag_retriever})`;
+  }
+  if (data.backend === "openai") {
+    return `OpenAI (${data.model})`;
+  }
+  return "ルールベース";
+}
+
 async function fetchHealth() {
   try {
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error("health check failed");
     const data = await response.json();
-    const label = data.backend === "openai"
-      ? `OpenAI (${data.model})`
-      : "ルールベース";
-    statusBadge.textContent = label;
+    statusBadge.textContent = formatBackendLabel(data);
     statusBadge.className = "status online";
   } catch {
     statusBadge.textContent = "接続エラー";
@@ -79,7 +99,7 @@ async function sendMessage(message) {
 
     sessionId = data.session_id;
     removeMessage(loadingEl);
-    addMessage("assistant", data.reply);
+    addMessage("assistant", data.reply, "", data.sources || []);
   } catch (error) {
     removeMessage(loadingEl);
     addMessage("assistant", `エラー: ${error.message}`, "error");
@@ -104,7 +124,7 @@ async function clearConversation() {
   chatContainer.innerHTML = "";
   addMessage(
     "assistant",
-    "会話をクリアしました。新しいメッセージを入力してください。"
+    "会話をクリアしました。霧晶の王国について質問してください。"
   );
 }
 
