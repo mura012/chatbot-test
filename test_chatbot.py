@@ -1,46 +1,106 @@
-"""chatbot.py の応答ロジックに対する簡単なテスト。
-
-会話ループ（input/print）の部分はテストしにくいので、
-「メッセージを渡したら、期待した返答が返ってくるか」という
-generate_reply() / is_exit_command() の部分だけをテストする。
-
-実行方法:
-    python -m unittest test_chatbot.py
-"""
+"""chatbot パッケージの単体テスト。"""
 
 import unittest
+from unittest.mock import MagicMock, patch
 
-from chatbot import DEFAULT_REPLY, generate_reply, is_exit_command
+from chatbot.backends.rule_based import RuleBasedReplyBackend
+from chatbot.config import Settings
+from chatbot.models import Conversation, Role
+from chatbot.service import ChatService
 
 
-class GenerateReplyTests(unittest.TestCase):
-    def test_greeting_returns_greeting_reply(self) -> None:
-        self.assertEqual(generate_reply("こんにちは"), "こんにちは！今日はどんなご用件ですか？")
+class RuleBasedBackendTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.backend = RuleBasedReplyBackend()
+        self.conversation = Conversation()
 
-    def test_keyword_matching_is_case_insensitive_for_english(self) -> None:
-        self.assertEqual(
-            generate_reply("HELLO there"), "こんにちは！今日はどんなご用件ですか？"
+    def test_greeting(self) -> None:
+        reply = self.backend.generate_reply(self.conversation, "こんにちは")
+        self.assertEqual(reply, "こんにちは！今日はどんなご用件ですか？")
+
+    def test_unknown_message(self) -> None:
+        reply = self.backend.generate_reply(self.conversation, "散歩に行きたい")
+        self.assertIn("散歩に行きたい", reply)
+
+
+class ConversationTests(unittest.TestCase):
+    def test_add_messages(self) -> None:
+        conv = Conversation()
+        conv.add_user_message("hello")
+        conv.add_assistant_message("hi")
+        self.assertEqual(len(conv.messages), 2)
+        self.assertEqual(conv.messages[0].role, Role.USER)
+        self.assertEqual(conv.messages[1].role, Role.ASSISTANT)
+
+    def test_api_messages_with_system_prompt(self) -> None:
+        conv = Conversation()
+        conv.add_user_message("test")
+        messages = conv.api_messages(system_prompt="You are helpful.")
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[1]["role"], "user")
+
+
+class ChatServiceTests(unittest.TestCase):
+    def test_chat_creates_session_and_stores_history(self) -> None:
+        settings = Settings(
+            openai_api_key=None,
+            openai_model="gpt-4o-mini",
+            backend="rule",
+            system_prompt="test",
+            host="127.0.0.1",
+            port=8000,
         )
+        service = ChatService.create(settings)
 
-    def test_thanks_returns_thanks_reply(self) -> None:
-        self.assertEqual(generate_reply("ありがとう！"), "どういたしまして！お役に立てて嬉しいです。")
+        reply1, session_id, messages1 = service.chat("こんにちは")
+        self.assertIn("こんにちは", reply1)
+        self.assertTrue(session_id)
 
-    def test_unknown_message_returns_default_reply(self) -> None:
-        message = "散歩に行きたいです"  # どのルールにも一致しないメッセージ
-        self.assertEqual(generate_reply(message), DEFAULT_REPLY.format(message=message))
+        reply2, same_id, messages2 = service.chat("ありがとう", session_id=session_id)
+        self.assertEqual(same_id, session_id)
+        self.assertIn("どういたしまして", reply2)
+        self.assertEqual(len(messages2), 4)  # user+assistant x2
 
-    def test_weather_keyword_returns_weather_reply(self) -> None:
-        self.assertIn("天気情報", generate_reply("明日の天気を教えて"))
+    def test_delete_conversation(self) -> None:
+        settings = Settings(
+            openai_api_key=None,
+            openai_model="gpt-4o-mini",
+            backend="rule",
+            system_prompt="test",
+            host="127.0.0.1",
+            port=8000,
+        )
+        service = ChatService.create(settings)
+        _, session_id, _ = service.chat("hello")
+        self.assertTrue(service.delete_conversation(session_id))
+        self.assertIsNone(service.get_history(session_id))
 
 
-class IsExitCommandTests(unittest.TestCase):
-    def test_exit_words_are_detected(self) -> None:
-        for word in ["exit", "quit", "終了", "bye", "さようなら", "  exit  ", "EXIT"]:
-            with self.subTest(word=word):
-                self.assertTrue(is_exit_command(word))
+class OpenAIBackendTests(unittest.TestCase):
+    def test_openai_backend_calls_api(self) -> None:
+        from chatbot.backends.openai import OpenAIReplyBackend
 
-    def test_normal_message_is_not_exit_command(self) -> None:
-        self.assertFalse(is_exit_command("こんにちは"))
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "AIからの応答"
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with patch("chatbot.backends.openai.OpenAI", return_value=mock_client):
+            backend = OpenAIReplyBackend(
+                api_key="test-key",
+                model="gpt-4o-mini",
+                system_prompt="Be helpful.",
+            )
+            conv = Conversation()
+            reply = backend.generate_reply(conv, "質問です")
+
+        self.assertEqual(reply, "AIからの応答")
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        self.assertEqual(call_kwargs["model"], "gpt-4o-mini")
+        messages = call_kwargs["messages"]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[-1]["content"], "質問です")
 
 
 if __name__ == "__main__":
